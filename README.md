@@ -1,0 +1,1 @@
+# sequential-vs-parallel-traitemeSequential-vs-Parallel-Data-Processingnt-of-DATA
