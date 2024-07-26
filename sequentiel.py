@@ -33,7 +33,7 @@ def preprocess_image(image_path):
     image_array = img_to_array(image)
     image_array = np.expand_dims(image_array, axis=0)
     image_array = tf.keras.applications.mobilenet_v2.preprocess_input(image_array)
-    output_path = os.path.join(output_sequentiel, os.path.basename(image_path))
+    output_path = os.path.join(output_sequentiel, os.path.basename(image_path).split('.')[0] + '.npy')
     np.save(output_path, image_array)
     return output_path
 
