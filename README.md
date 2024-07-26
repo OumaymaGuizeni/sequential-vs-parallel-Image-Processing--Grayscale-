@@ -1,1 +1,1 @@
-# sequential-vs-parallel-Image-Processing-(Grayscal)
+# sequential-vs-parallel-Image-Processing-(Grayscale)
