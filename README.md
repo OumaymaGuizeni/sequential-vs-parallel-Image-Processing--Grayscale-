@@ -91,12 +91,14 @@ cd sequential-vs-parallel-Image-Processing-(Grayscale)
 1. Sequential Processing: To run the sequential processing implementation:
    
    ```bash
+   g++ -o test_seq test_seq.c `pkg-config --cflags --libs opencv4 starpu-1.2` -lpthread
    ./test_seq
    ```
    
 2. Parallel Processing: To run the parallel processing implementation:
    
    ```bash
+   g++ -o test_para test_para.c `pkg-config --cflags --libs opencv4 starpu-1.2` -lpthread
    ./test_para
    ```
 
