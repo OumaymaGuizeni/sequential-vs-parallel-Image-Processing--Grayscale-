@@ -13,7 +13,11 @@ using namespace cv;
 const char* input_sequentiel = "/home/yasser_jemli/syscalls/input";
 const char* output_sequentiel = "/home/yasser_jemli/syscalls/output/sequentiel";
 
-void processImage(const char *inputPath, const char *outputPath) {
+void processImage(const char *inputPath, const char *outputPath, double *processingTime) {
+    struct timespec start, end;
+
+    clock_gettime(CLOCK_MONOTONIC, &start); // Start timing
+
     Mat img = imread(inputPath, IMREAD_COLOR); // Load the image
     if (img.empty()) {
         fprintf(stderr, "Error opening image %s\n", inputPath); // Error if the image is not loaded
@@ -27,6 +31,10 @@ void processImage(const char *inputPath, const char *outputPath) {
         fprintf(stderr, "Error saving image %s\n", outputPath); // Error if the image is not saved
         exit(EXIT_FAILURE);
     }
+
+    clock_gettime(CLOCK_MONOTONIC, &end); // End timing
+
+    *processingTime = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) / 1e9;
 }
 
 double getCPUUsage() {
@@ -64,6 +72,8 @@ int main() {
     struct timespec start, end;
     clock_gettime(CLOCK_MONOTONIC, &start);
 
+    double totalProcessingTime = 0.0; // Variable to accumulate the total processing time
+
     double cpuUsageBefore = getCPUUsage();
     int processCountBefore = countProcesses();
 
@@ -87,7 +97,9 @@ int main() {
                     continue;
                 }
 
-                processImage(inputPath, outputPath); // Process the image
+                double processingTime;
+                processImage(inputPath, outputPath, &processingTime); // Process the image
+                totalProcessingTime += processingTime; // Accumulate the processing time
             }
         }
         closedir(dir); // Close the directory
@@ -98,16 +110,15 @@ int main() {
 
     clock_gettime(CLOCK_MONOTONIC, &end);
 
+    double timeTaken = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) / 1e9;
+
     double cpuUsageAfter = getCPUUsage();
     int processCountAfter = countProcesses();
 
-    double timeTaken = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) / 1e9;
-
     printf("Time taken: %.2f seconds\n", timeTaken);
-    printf("CPU usage before: %.2f%%\n", cpuUsageBefore);
-    printf("CPU usage after: %.2f%%\n", cpuUsageAfter);
-    printf("Process count before: %d\n", processCountBefore);
-    printf("Process count after: %d\n", processCountAfter);
+    printf("CPU usage: %.2f%%\n", cpuUsageAfter);
+    printf("Process count: %d\n", processCountAfter);
 
     return EXIT_SUCCESS; // Terminate the program successfully
 }
+

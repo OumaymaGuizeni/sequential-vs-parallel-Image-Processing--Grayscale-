@@ -11,11 +11,17 @@
 using namespace cv;
 
 #define MAX_PATH_LEN 1024
+#define MAX_CHILDREN 8
+#define MAX_FILE_LEN 256
 
 const char* input_sequentiel = "/home/yasser_jemli/syscalls/input";
 const char* output_sequentiel = "/home/yasser_jemli/syscalls/output/parallele";
 
-void processImage(const char *inputPath, const char *outputPath) {
+void processImage(const char *inputPath, const char *outputPath, double *processingTime) {
+    struct timespec start, end;
+
+    clock_gettime(CLOCK_MONOTONIC, &start); // Start timing
+
     Mat img = imread(inputPath, IMREAD_COLOR); // Load the image
     if (img.empty()) {
         fprintf(stderr, "Error opening image %s\n", inputPath); // Error if the image is not loaded
@@ -29,6 +35,10 @@ void processImage(const char *inputPath, const char *outputPath) {
         fprintf(stderr, "Error saving image %s\n", outputPath); // Error if the image is not saved
         exit(EXIT_FAILURE);
     }
+
+    clock_gettime(CLOCK_MONOTONIC, &end); // End timing
+
+    *processingTime = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) / 1e9;
 }
 
 double getCPUUsage() {
@@ -69,10 +79,14 @@ int main() {
     double cpuUsageBefore = getCPUUsage();
     int processCountBefore = countProcesses();
 
+    double maxProcessingTime = 0.0; // Variable to track the maximum processing time
+
     if ((dir = opendir(input_sequentiel)) != NULL) { // Open the input directory
+        pid_t childPIDs[MAX_CHILDREN];
+        int activeProcesses = 0;
+
+        // Count the number of images
         int imageCount = 0;
-        
-        // First, count the number of images
         while ((ent = readdir(dir)) != NULL) {
             if (ent->d_type == DT_REG) {
                 imageCount++;
@@ -82,9 +96,9 @@ int main() {
         // Reset the directory pointer
         rewinddir(dir);
 
-        // Create a child process for each image
-        for (int i = 0; i < imageCount; i++) {
-            if ((ent = readdir(dir)) != NULL && ent->d_type == DT_REG) {
+        // Create child processes for each image
+        while ((ent = readdir(dir)) != NULL) {
+            if (ent->d_type == DT_REG) {
                 char inputPath[MAX_PATH_LEN];
                 char outputPath[MAX_PATH_LEN];
 
@@ -102,25 +116,82 @@ int main() {
                     continue;
                 }
 
+                if (activeProcesses >= MAX_CHILDREN) {
+                    // Wait for any child process to finish before creating a new one
+                    int status;
+                    pid_t finishedPID = wait(&status);
+                    if (WIFEXITED(status)) {
+                        char timeFile[MAX_FILE_LEN];
+                        snprintf(timeFile, sizeof(timeFile), "/tmp/processing_time_%d.txt", finishedPID);
+                        FILE *f = fopen(timeFile, "r");
+                        if (f) {
+                            double childProcessingTime;
+                            fscanf(f, "%lf", &childProcessingTime);
+                            fclose(f);
+                            if (childProcessingTime > maxProcessingTime) {
+                                maxProcessingTime = childProcessingTime;
+                            }
+                        }
+                        remove(timeFile); // Clean up the temporary file
+                    }
+                    activeProcesses--;
+                }
+
                 pid_t pid = fork(); // Fork a child process
 
                 if (pid == 0) {
                     // Child process
-                    processImage(inputPath, outputPath); // Process the image
+                    double processingTime;
+                    processImage(inputPath, outputPath, &processingTime); // Process the image
+
+                    // Write the processing time to a file
+                    char timeFile[MAX_FILE_LEN];
+                    snprintf(timeFile, sizeof(timeFile), "/tmp/processing_time_%d.txt", getpid());
+                    FILE *f = fopen(timeFile, "w");
+                    if (f) {
+                        fprintf(f, "%.6f\n", processingTime);
+                        fclose(f);
+                    }
+
+                    printf("Child PID: %d, Processing Time: %.6f seconds\n", getpid(), processingTime);
                     exit(EXIT_SUCCESS); // Exit the child process
                 } else if (pid < 0) {
                     // Fork failed
                     perror("Fork failed");
                     exit(EXIT_FAILURE);
+                } else {
+                    // Parent process
+                    childPIDs[activeProcesses] = pid;
+                    activeProcesses++;
                 }
-                // Parent process continues to next iteration
             }
         }
 
         closedir(dir); // Close the directory
 
-        // Wait for all child processes to finish
-        while (wait(NULL) > 0);
+        // Wait for all remaining child processes to finish
+        while (activeProcesses > 0) {
+            int status;
+            pid_t finishedPID = wait(&status);
+            if (WIFEXITED(status)) {
+                char timeFile[MAX_FILE_LEN];
+                snprintf(timeFile, sizeof(timeFile), "/tmp/processing_time_%d.txt", finishedPID);
+                FILE *f = fopen(timeFile, "r");
+                if (f) {
+                    double childProcessingTime;
+                    fscanf(f, "%lf", &childProcessingTime);
+                    fclose(f);
+                    if (childProcessingTime > maxProcessingTime) {
+                        maxProcessingTime = childProcessingTime;
+                    }
+                }
+                remove(timeFile); // Clean up the temporary file
+            }
+            activeProcesses--;
+        }
+
+        printf("All child processes completed.\n");
+
     } else {
         perror("Error opening directory"); // Error if the directory cannot be opened
         return EXIT_FAILURE;
@@ -128,16 +199,11 @@ int main() {
 
     clock_gettime(CLOCK_MONOTONIC, &end);
 
-    double cpuUsageAfter = getCPUUsage();
-    int processCountAfter = countProcesses();
-
     double timeTaken = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) / 1e9;
 
-    printf("Time taken: %.2f seconds\n", timeTaken);
-    printf("CPU usage before: %.2f%%\n", cpuUsageBefore);
-    printf("CPU usage after: %.2f%%\n", cpuUsageAfter);
-    printf("Process count before: %d\n", processCountBefore);
-    printf("Process count after: %d\n", processCountAfter);
+    printf("Time taken: %.2f seconds\n", maxProcessingTime);
+    printf("CPU usage: %.2f%%\n", getCPUUsage()); // Adjusted to only show final CPU usage
+    printf("Process count: %d\n", countProcesses()); // Adjusted to only show final process count
 
     return EXIT_SUCCESS; // Terminate the program successfully
 }
